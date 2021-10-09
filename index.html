@@ -1,0 +1,158 @@
+<html>
+<head>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.1.1/socket.io.js"
+            integrity="sha512-oFOCo2/3DtjrJG4N27BjSLQWoiBv171sK6a+JiWjp/7agxC2nCUP358AqzxkBUb5jX8g6CYLPdSKQTbC0weCwA=="
+            crossorigin="anonymous"></script>
+    <script type="text/javascript" charset="utf-8">
+        $(document).ready(function() {
+            var socket = io.connect('http://localhost:5000/kafka');
+
+            // INIT
+            socket.emit('kafka_consumer', "");
+            socket.emit('get_report_from_api', "api");
+            socket.emit('get_report_from_db', "db");
+            socket.emit('get_currencies', "");
+            socket.emit('get_my_assets', "");
+
+            // Kafka alert management
+            socket.on('kafka_consumer', function(msg) {
+                $('#consumer').append('' + $('<div/>').html(msg.data).html());
+            });
+            socket.on('alert_remove', function(msg) {
+                setTimeout(function() {
+                    var element = document.getElementById(msg.data);
+                    element.remove()
+                } ,30000);
+            });
+
+            socket.on('get_currencies', function(msg) {
+                var asset_id_list = JSON.parse(msg.data);
+                asset_id_list.forEach((item) => {
+                    $('#currencies').append('<option value="' + item + '">' + item + '</option>');
+                });
+            });
+
+            socket.on('volume_24h_first', function(msg) {
+                $('#volume_24h_first').html(msg.data);
+            });
+
+            socket.on('volume_24h_last', function(msg) {
+                $('#volume_24h_last').html(msg.data);
+            });
+
+            socket.on('change_1h_first', function(msg) {
+                $('#change_1h_first').html(msg.data);
+            });
+
+            socket.on('change_1h_last', function(msg) {
+                $('#change_1h_last').html(msg.data);
+            });
+
+            socket.on('logs', function(msg) {
+                $('#log').append('<br>' + $('<div/>').text(msg.data).html());
+            });
+
+            socket.on('get_my_assets', function(msg) {
+                $('#my_assets').html(msg.data + '<img src="http://localhost:5000/usd_value_pie_chart" />');
+            });
+
+            socket.on('update_my_assets', function(msg) {
+                $('#log').append('<br>' + $('<div/>').text(msg.data).html());
+            });
+
+            socket.on('drop_ten_percent_in_last_1h', function(msg) {
+                $('#drop_ten_percent_in_last_1h').append('<br>' + $('<div/>').text(msg.data).html());
+            });
+
+            socket.on('drop_ten_percent_in_last_24h', function(msg) {
+                $('#drop_ten_percent_in_last_24h').append('<br>' + $('<div/>').text(msg.data).html());
+            });
+
+            socket.on('highest_drop_in_last_24h', function(msg) {
+                $('#worst_24h').append('<br>' + $('<div/>').text(msg.data).html());
+            });
+
+            socket.on('wave_in_last_24h', function(msg) {
+                $('#min_max').append('<br>' + $('<div/>').text(msg.data).html());
+            });
+
+            socket.on('highest_increase_asset', function(msg) {
+                $('#inc24h').html(msg.data + '<br/><img src="http://localhost:5000/last_24h_price_time_graph?asset_id=' + msg.data + '" />');
+            });
+
+            socket.on('highest_drop_asset', function(msg) {
+                $('#dec24h').html(msg.data + '<br/><img src="http://localhost:5000/last_24h_price_time_graph?asset_id=' + msg.data + '" />');
+            });
+
+        });
+
+        function addAsset() {
+            var socket = io.connect('http://localhost:5000/kafka');
+            data = '{"currency": "' + document.getElementById('currencies').value + '", "amount": ' + document.getElementById('amount').value + '}';
+            socket.emit('add_asset', data);
+        }
+    </script>
+</head>
+<body>
+    <h1>API</h1>
+    <table border="0" width="100%">
+        <tr>
+        <th>İşlem hacmi en çok olan 5 kayıt</th>
+        <th>İşlem hacmi en az olan 5 kayıt</th>
+        <th>En çok artan 5 kayıt (Son 1 saat)</th>
+        <th>En çok düşen 5 kayıt (Son 1 saat)</th>
+        </tr>
+        <tr>
+        <td valign="top" align="center"><div id="volume_24h_first"></div></td>
+        <td valign="top" align="center"><div id="volume_24h_last"></div></td>
+        <td valign="top" align="center"><div id="change_1h_first"></div></td>
+        <td valign="top" align="center"><div id="change_1h_last"></div></td>
+        </tr>
+    </table>
+    <h1>Alarm</h1>
+    <div id="consumer" style="border:1px; width:100%; color:red"></div>
+    <h1>Uyarılar</h1>
+    <table border="0" width="100%">
+        <tr>
+        <th>%10'dan fazla düşen varlık (Son 1 saat)</th>
+        <th>%10'dan fazla düşen varlık (Son 24 saat)</th>
+        <th>En fazla kayıp olan varlık (Son 24 saat)</th>
+        <th>En fazla dalgalanan varlık (Son 24 saat)</th>
+        </tr>
+        <tr>
+        <td valign="top" align="center"><div id="drop_ten_percent_in_last_1h"></div></td>
+        <td valign="top" align="center"><div id="drop_ten_percent_in_last_24h"></div></td>
+        <td valign="top" align="center"><div id="worst_24h"></div></td>
+        <td valign="top" align="center"><div id="min_max"></div></td>
+        </tr>
+    </table>
+<br />Kaybın oluştuğu an için takip ettiğiniz varlıkların her birinin saatlik ortalama fiyat değişimini hesap ediniz.
+<h1>Dashboard</h1>
+<table width="100%">
+    <tr>
+        <td valign="top" align="center"><h2>Varlıklarım</h2><div id="my_assets">Grafik yüklenecek.</div></td>
+        <td valign="top" align="center"><h2>En çok artış gösteren varlık</h2><div id="inc24h">Grafik yüklenecek.</div></td>
+        <td valign="top" align="center"><h2>En çok düşüş gösteren varlık</h2><div id="dec24h">Grafik yüklenecek.</div></td>
+    </tr>
+    <tr><td colspan="3" valign="top" align="center">Portföydeki tüm varlıkların USD toplamının son 24 saat içerisindeki zaman/fiyat grafiği  ???</td></tr>
+</table>
+<h1>Kontrol Panel</h1>
+<table width="100%">
+    <tr>
+        <th>Varlık Ekleme</th>
+        <th>Alarm belirleme</th>
+    </tr>
+    <tr>
+        <td valign="top" align="center"><select id='currencies'></select><input id='amount' type="text" /><button onclick="addAsset()">Varlık Ekle/Çıkar</button></td>
+        <td valign="top" align="center">Fiyat bilgisi hedef bir değer üzerine çıkan varlıklar bilgisi (Hedef değeri market bazlı siz belirleyebilirsiniz)</td>
+    </tr>
+</table>
+<h4>Logs</h4>
+<h6><div id="log">
+anlık izleme</br>
+market karşılaştırma</br>
+en yüksek fiyatlı ve en az fiyatlı market
+</div></h6>
+</body>
+</html>

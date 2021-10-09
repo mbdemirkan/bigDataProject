@@ -1,0 +1,13 @@
+pyspark == 2.3.0
+numpy~=1.21.2
+pandas~=1.3.3
+psutil
+matplotlib~=3.4.3
+requests~=2.26.0
+pymongo
+flask~=2.0.1
+kafka-python
+Flask-SocketIO
+simple-websocket
+flask_cors
+eventlet
