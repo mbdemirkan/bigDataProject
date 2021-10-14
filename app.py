@@ -22,9 +22,6 @@ import my_library
 import graphs
 
 # Initialize
-#assets = {}
-#for asset in my_library.get_assets():
-#    assets[asset["asset_id"]] = []
 MONGODB_HOST = 'mongodb://localhost:27017/?readPreference=primary&appname=BigDataProject&ssl=false'
 MONGODB_DBNAME = 'BIG_DATA_PROJECT'
 
@@ -61,6 +58,24 @@ def usd_value_pie_chart():
     # return f"<img src='data:image/png;base64,{data}'/>"
     return send_file(io.BytesIO(buf.getbuffer()),
                      download_name='usd_value_pie_chart.png',
+                     mimetype='image/png')
+
+
+@app.route('/usd_value_total_24h_chart')
+def usd_value_total_24h_chart():
+    # Generate the figure **without using pyplot**.
+    my_assets = my_library.calculate_usd_total()
+    data = my_assets.toPandas()
+    fig = graphs.usd_value_total_24h_chart(data)
+
+    # Save it to a temporary buffer.
+    buf = BytesIO()
+    fig.savefig(buf, format="png")
+    # Embed the result in the html output.
+    # data = base64.b64encode(buf.getbuffer()).decode("ascii")
+    # return f"<img src='data:image/png;base64,{data}'/>"
+    return send_file(io.BytesIO(buf.getbuffer()),
+                     download_name='usd_value_total_24h_chart.png',
                      mimetype='image/png')
 
 
@@ -149,12 +164,11 @@ def test_connect():
 def get_report_from_api(message):
     print("get_report_from_api")
     print(message)
-    print("DEACTIVATED!")
-    # report = my_library.create_asset_report_from_api()
-    # emit('volume_24h_first', {'data': report["first_five_in_volume_24h"]})
-    # emit('volume_24h_last', {'data': report["last_five_in_volume_24h"]})
-    # emit('change_1h_first', {'data': report["first_five_in_change_1h"]})
-    # emit('change_1h_last', {'data': report["last_five_in_change_1h"]})
+    report = my_library.create_asset_report_from_api()
+    emit('volume_24h_first', {'data': report["first_five_in_volume_24h"]})
+    emit('volume_24h_last', {'data': report["last_five_in_volume_24h"]})
+    emit('change_1h_first', {'data': report["first_five_in_change_1h"]})
+    emit('change_1h_last', {'data': report["last_five_in_change_1h"]})
 
 
 @socketio.on('get_report_from_db', namespace='/kafka')

@@ -83,6 +83,7 @@
 
             socket.on('highest_drop_asset', function(msg) {
                 $('#dec24h').html(msg.data + '<br/><img src="http://localhost:5000/last_24h_price_time_graph?asset_id=' + msg.data + '" />');
+                $('#usd_value_total_24h_chart').html('<br/><img src="http://localhost:5000/usd_value_total_24h_chart" />');
             });
 
         });
@@ -127,7 +128,7 @@
         <td valign="top" align="center"><div id="min_max"></div></td>
         </tr>
     </table>
-<br />Kaybın oluştuğu an için takip ettiğiniz varlıkların her birinin saatlik ortalama fiyat değişimini hesap ediniz.
+<br />
 <h1>Dashboard</h1>
 <table width="100%">
     <tr>
@@ -135,7 +136,7 @@
         <td valign="top" align="center"><h2>En çok artış gösteren varlık</h2><div id="inc24h">Grafik yüklenecek.</div></td>
         <td valign="top" align="center"><h2>En çok düşüş gösteren varlık</h2><div id="dec24h">Grafik yüklenecek.</div></td>
     </tr>
-    <tr><td colspan="3" valign="top" align="center">Portföydeki tüm varlıkların USD toplamının son 24 saat içerisindeki zaman/fiyat grafiği  ???</td></tr>
+    <tr><td colspan="3" valign="top" align="center"><h2>Portföydeki tüm varlıkların USD toplamının son 24 saat içerisindeki zaman/fiyat grafiği</h2><div id="usd_value_total_24h_chart">Grafik yüklenecek.</div></td></tr>
 </table>
 <h1>Kontrol Panel</h1>
 <table width="100%">

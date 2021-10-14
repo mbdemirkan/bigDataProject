@@ -6,17 +6,13 @@ import my_library
 from datetime import datetime, timedelta
 import copy
 from kafka.admin import KafkaAdminClient, NewTopic
-
+import time
 
 # Initialize
 refresh_duration_in_seconds = 20
 asset_topic = "asset_data"
 market_topic = "market_data"
 ui_alert_topic = "ui_alert"
-
-assets = []
-for asset in my_library.get_assets():
-    assets.append({"asset_id": asset["asset_id"], 'updated_at': "new", 'market_updated_at': "new"})
 
 producer = KafkaProducer(bootstrap_servers=['localhost:9092'],
                          value_serializer=lambda x: dumps(x).encode('utf-8'))
@@ -44,8 +40,30 @@ def create_kafka_topics():
 
 
 def main():
+    start_time = time.time()
     create_kafka_topics()
+    my_library.check_exchanges()
+    half_hour = 30 * 60
+    twelve_hour = 12 * 60 * 60
+    only_for_my_assets = True
+
+    assets = []
+    if only_for_my_assets:
+        for asset in my_library.get_my_assets_from_db():
+            assets.append({"asset_id": asset["currency"], 'updated_at': "new", 'market_updated_at': "new"})
+    else:
+        for asset in my_library.get_assets():
+            assets.append({"asset_id": asset["asset_id"], 'updated_at': "new", 'market_updated_at': "new"})
     while True:
+        elapsed = time.time() - start_time
+
+        if only_for_my_assets:
+            for asset in my_library.get_my_assets_from_db():
+                found = any(asset["currency"] in asset_for_loop["asset_id"] for asset_for_loop in assets)
+                if not found:
+                    assets.append({"asset_id": asset["currency"], 'updated_at': "new", 'market_updated_at': "new"})
+                    print(asset["currency"], " added!")
+
         asset_data = my_library.get_assets()
         for data_0h in asset_data:
             for my_asset in assets:
@@ -79,27 +97,31 @@ def main():
                             print("ValueError:", updated_at)
                             updated_at = datetime.strptime(updated_at, "%Y-%m-%dT%H:%M:%S")
 
-                        data_1h_ago = copy.deepcopy(data_0h)
-                        updated_at_1h_ago = updated_at - timedelta(hours=1.)
-                        data_1h_ago["updated_at"] = str(updated_at_1h_ago).replace(" ", "T")
-                        data_1h_ago["price"] = data_1h_ago["price"] + change_1h
-                        # print(data_1h_ago)
-                        producer.send(asset_topic, value=data_1h_ago, key=data_1h_ago["asset_id"].encode('utf-8'))
+                        if elapsed < half_hour:
+                            data_1h_ago = copy.deepcopy(data_0h)
+                            updated_at_1h_ago = updated_at - timedelta(hours=1.)
+                            data_1h_ago["updated_at"] = str(updated_at_1h_ago).replace(" ", "T")
+                            data_1h_ago["price"] = data_1h_ago["price"] + change_1h
+                            # print(data_1h_ago)
+                            producer.send(asset_topic, value=data_1h_ago, key=data_1h_ago["asset_id"].encode('utf-8'))
 
-                        data_24h_ago = copy.deepcopy(data_0h)
-                        updated_at_24h_ago = updated_at - timedelta(hours=24.)
-                        data_24h_ago["updated_at"] = str(updated_at_24h_ago).replace(" ", "T")
-                        data_24h_ago["price"] = data_24h_ago["price"] + change_24h
-                        # print(data_24h_ago)
-                        producer.send(asset_topic, value=data_24h_ago, key=data_24h_ago["asset_id"].encode('utf-8'))
+                        if elapsed < twelve_hour:
+                            data_24h_ago = copy.deepcopy(data_0h)
+                            updated_at_24h_ago = updated_at - timedelta(hours=24.)
+                            data_24h_ago["updated_at"] = str(updated_at_24h_ago).replace(" ", "T")
+                            data_24h_ago["price"] = data_24h_ago["price"] + change_24h
+                            # print(data_24h_ago)
+                            producer.send(asset_topic, value=data_24h_ago, key=data_24h_ago["asset_id"].encode('utf-8'))
 
-                        data_7d_ago = copy.deepcopy(data_0h)
-                        updated_at_7d_ago = updated_at - timedelta(days=7.)
-                        data_7d_ago["updated_at"] = str(updated_at_7d_ago).replace(" ", "T")
-                        data_7d_ago["price"] = data_7d_ago["price"] + change_7d
-                        # print(data_7d_ago)
-                        producer.send(asset_topic, value=data_7d_ago, key=data_7d_ago["asset_id"].encode('utf-8'))
-                        print(".")
+                        # no need to get this for project
+                        if False:
+                            data_7d_ago = copy.deepcopy(data_0h)
+                            updated_at_7d_ago = updated_at - timedelta(days=7.)
+                            data_7d_ago["updated_at"] = str(updated_at_7d_ago).replace(" ", "T")
+                            data_7d_ago["price"] = data_7d_ago["price"] + change_7d
+                            # print(data_7d_ago)
+                            producer.send(asset_topic, value=data_7d_ago, key=data_7d_ago["asset_id"].encode('utf-8'))
+                    print(".")
 
         markets_df = my_library.get_asset_market_price()
         market_data = markets_df.toJSON().collect()
@@ -111,6 +133,10 @@ def main():
             for my_asset in assets:
                 asset_id = my_asset['asset_id']
                 if asset_id == base_asset:
+                    # if only_for_my_assets:
+                    #     found = any(quote_asset in asset_for_loop["asset_id"] for asset_for_loop in assets)
+                    #     if not found:
+                    #         continue
                     print("market ", asset_id, " ", end="")
                     market_last_updated_at = my_asset['market_updated_at']
                     if market_updated_at != market_last_updated_at:

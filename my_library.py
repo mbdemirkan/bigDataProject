@@ -2,7 +2,7 @@ import requests
 from pyspark.sql import SparkSession
 from pyspark import SparkContext
 import pandas as pd
-from pyspark.sql.functions import when, col, lit
+from pyspark.sql.functions import when, col, lit, UserDefinedFunction
 from pyspark.sql import functions as F
 from pymongo import MongoClient
 from datetime import datetime, timedelta
@@ -131,26 +131,42 @@ def create_asset_report_from_api():
     return report
 
 
-def \
-        create_asset_report_from_db():
+def create_asset_report_from_db():
     in_last_1h = drop_ten_percent_in_last_1h()
     first_row = in_last_1h.first()
-    in_last_1h = f"{first_row['asset_id']} varlığı {first_row['first']}'de başlayan %{first_row['percent']} oranında kayıp yaşamıştır."
+    if first_row is not None:
+        in_last_1h = f"{first_row['asset_id']} varlığı {first_row['first']}'de " \
+                     f"başlayan %{first_row['percent']} oranında kayıp yaşamıştır."
+    else:
+        in_last_1h = "Her hangi bir varlıkta %10'dan fazla kayıp yaşanmamıştır"
 
     in_last_24h = drop_ten_percent_in_last_24h()
     first_row = in_last_24h.first()
-    in_last_24h = f"{first_row['asset_id']} varlığı {first_row['first']}'de başlayan %{first_row['percent']} oranında kayıp yaşamıştır."
+    if first_row is not None:
+        in_last_24h = f"{first_row['asset_id']} varlığı {first_row['first']}'de " \
+                      f"başlayan %{first_row['percent']} oranında kayıp yaşamıştır."
+    else:
+        in_last_24h = "Her hangi bir varlıkta %10'dan fazla kayıp yaşanmamıştır"
 
     highest_drop = highest_drop_in_last_24h()
     highest_drop_asset = f"{highest_drop['asset_id']}"
-    highest_drop = f"{highest_drop['asset_id']} varlığı {highest_drop['first']}'de başlayan %{highest_drop['percent']} oranında kayıp yaşamıştır."
+    highest_drop = f"{highest_drop['asset_id']} varlığı {highest_drop['first']}'de " \
+                   f"başlayan %{highest_drop['percent']} oranında kayıp yaşamıştır."
 
     wave_24h = wave_in_last_24h()
-    wave_24h = f"{wave_24h['asset_id']} varlığı {wave_24h['first']}'de başlayan %{wave_24h['percent']} oranında kayıp yaşamıştır."
+    if wave_24h is not None:
+        wave_24h = f"{wave_24h['asset_id']} varlığı {wave_24h['first']}'de " \
+                   f"başlayan %{wave_24h['percent']} oranında kayıp yaşamıştır."
+    else:
+        wave_24h = "Her hangi bir varlıkta dalgalanma yaşanmamıştır"
 
     highest_increase = highest_increase_in_last_24h()
-    highest_increase_asset = f"{highest_increase['asset_id']}"
-    # highest_increase = f"{highest_increase['asset_id']} varlığı {highest_increase['first']}'de başlayan %{highest_increase['percent']} oranında kazanç yaşamıştır."
+    if highest_increase is not None:
+        highest_increase_asset = f"{highest_increase['asset_id']}"
+        # highest_increase = f"{highest_increase['asset_id']} varlığı {highest_increase['first']}'de
+        # başlayan %{highest_increase['percent']} oranında kazanç yaşamıştır."
+    else:
+        highest_increase_asset = ""
 
     report = {"drop_ten_percent_in_last_1h": in_last_1h,
               "drop_ten_percent_in_last_24h": in_last_24h,
@@ -200,7 +216,6 @@ def get_market_prices(exchanges_df):
         result = spark.sql(
             "select m.base_asset, m.quote_asset, m.price_unconverted as " + exchange_id + " from markets m, exchanges e where m.exchange_id = e.exchange_id and e.exchange_id = '" + exchange_id + "'")
     result.show()
-    exit()
     return result
 
 
@@ -311,6 +326,58 @@ def get_market_data_from_db(asset_id):
         for r in result:
             return r
     return {}
+
+
+def get_hour(updated_at):
+    return updated_at[0:16] + ":00"
+
+
+def calculate_last_24h_usd_total(last_24h, my_assets):
+    last_24h = last_24h.drop("group_id")
+
+    get_hour_udf = UserDefinedFunction(get_hour, StringType())
+    last_24h = last_24h.withColumn("temp", get_hour_udf('updated_at')).drop("updated_at")\
+        .withColumnRenamed("temp", 'updated_at')
+    last_24h.createOrReplaceTempView('last_Xh')
+
+    my_assets.createOrReplaceTempView('my_assets')
+
+    sql = "SELECT x.asset_id, x.price * a.amount price, x.updated_at " \
+          "FROM last_Xh x, my_assets a WHERE x.asset_id = a.currency"
+    last_24h = spark.sql(sql)
+    last_24h.createOrReplaceTempView('last_Xh')
+
+    sql = "SELECT asset_id, MAX(price) price, updated_at " \
+          "FROM last_Xh GROUP BY asset_id, updated_at"
+    last_24h = spark.sql(sql)
+    last_24h.createOrReplaceTempView('last_Xh')
+
+    sql = "SELECT SUM(price) price, updated_at " \
+          "FROM last_Xh GROUP BY updated_at"
+    last_24h = spark.sql(sql).sort(col("updated_at").asc())
+
+    return last_24h
+
+
+def calculate_usd_total():
+    pdf = get_last_24h_usd_total(28.)
+    last_24h = get_dataframe_from_pdf(pdf).drop("name")
+    pdf = pd.DataFrame(list(get_my_assets_from_db()))
+    my_assets = get_dataframe_from_pdf(pdf)
+    return calculate_last_24h_usd_total(last_24h, my_assets)
+
+
+def get_last_24h_usd_total(x):
+    current_time = datetime.now()
+    updated_at_1h_ago = current_time - timedelta(hours=x)
+    updated_at_1h_ago = str(updated_at_1h_ago).replace(" ", "T")
+    # Printing value of now.
+    print("Time now at greenwich meridian is : ")
+    current_time = str(current_time).replace(" ", "T")
+    print(current_time)
+    print(updated_at_1h_ago)
+    pdf = pd.DataFrame(list(get_asset_data_from_db(updated_at_1h_ago, current_time)))
+    return pdf
 
 
 def get_last_x_hour_asset_data(x):
@@ -424,25 +491,25 @@ def drop_ten_percent_in_last_1h():
 
 
 def drop_ten_percent_in_last_24h():
-    pdf = get_last_x_hour_asset_data(28.)
+    pdf = get_last_x_hour_asset_data(27.)
     last_1h = get_dataframe_from_pdf(pdf).drop("name")
     return find_drop_ten_percent(last_1h)
 
 
 def highest_drop_in_last_24h():
-    pdf = get_last_x_hour_asset_data(28.)
+    pdf = get_last_x_hour_asset_data(27.)
     last_1h = get_dataframe_from_pdf(pdf).drop("name")
     return find_highest_drop_in_last_24h(last_1h)
 
 
 def highest_increase_in_last_24h():
-    pdf = get_last_x_hour_asset_data(28.)
+    pdf = get_last_x_hour_asset_data(27.)
     last_1h = get_dataframe_from_pdf(pdf).drop("name")
     return find_highest_increase_in_last_24h(last_1h)
 
 
 def wave_in_last_24h():
-    pdf = get_last_x_hour_asset_data(28.)
+    pdf = get_last_x_hour_asset_data(27.)
     last_1h = get_dataframe_from_pdf(pdf).drop("name")
     return find_wave_in_last_24h(last_1h)
 
@@ -517,3 +584,16 @@ def alarm_fired(alarm):
         new_values = {"$set": {"completed": True}}
 
         collection_alarms.update_one(my_query, new_values)
+
+
+def check_exchanges():
+    markets_from_db = get_markets_from_db()
+    if markets_from_db.empty:
+        if MONGODB_DBNAME in connection.list_database_names():
+            db = connection[MONGODB_DBNAME]
+            collection_markets = db["markets"]
+            exchanges = get_exchanges()
+            for exchange in exchanges:
+                market = {"market": exchange["exchange_id"]}
+                collection_markets.insert_one(market)
+    pass
